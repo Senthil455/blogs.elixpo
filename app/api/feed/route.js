@@ -16,6 +16,7 @@ const EXCLUDE_SECRET = ' AND b.secret = 0';
 
 // Keep the test author ("selenium-cutlet") out of every feed surface.
 const EXCLUDE_TEST = " AND b.author_id NOT IN (SELECT id FROM users WHERE LOWER(username) = 'selenium-cutlet')";
+const MAX_FEED_CANDIDATES = 200;
 
 /**
  * GET /api/feed — personalized feed
@@ -29,8 +30,12 @@ export async function GET(request) {
   const { searchParams } = new URL(request.url);
   const rawPage = Number.parseInt(searchParams.get('page') || '1', 10);
   const rawLimit = Number.parseInt(searchParams.get('limit') || '20', 10);
-  const page = Number.isFinite(rawPage) ? Math.min(Math.max(rawPage, 1), 100) : 1;
   const limit = Number.isFinite(rawLimit) ? Math.min(Math.max(rawLimit, 1), 40) : 20;
+  // Blended feeds rank a bounded candidate window in memory. Do not accept a
+  // page whose offset is beyond that window, or a valid request deterministically
+  // turns into an empty page while more stories still exist.
+  const maxPage = Math.max(1, Math.floor(MAX_FEED_CANDIDATES / limit));
+  const page = Number.isFinite(rawPage) ? Math.min(Math.max(rawPage, 1), maxPage) : 1;
   const filterType = searchParams.get('filter') || '';
   const filterTag = searchParams.get('tag') || '';
   const offset = (page - 1) * limit;
@@ -250,7 +255,7 @@ async function queryRecent(db, limit, offset = 0) {
 
 // ─── Blended feed (3 buckets merged in JS) ───────────────────────────
 async function queryBlended(db, userId, headers, now, limit, offset = 0) {
-  const candidateLimit = Math.min(200, Math.max(40, offset + limit * 3));
+  const candidateLimit = Math.min(MAX_FEED_CANDIDATES, Math.max(40, offset + limit * 3));
   const [reposts, following, interests, trending, recent] = await Promise.all([
     queryFollowedReposts(db, userId, now, candidateLimit),
     queryFollowing(db, userId, now, candidateLimit, 0),
@@ -286,7 +291,7 @@ async function queryBlended(db, userId, headers, now, limit, offset = 0) {
 }
 
 async function queryRecommendedAnonymous(db, headers, now, limit, offset) {
-  const candidateLimit = Math.min(200, Math.max(60, offset + limit * 4));
+  const candidateLimit = Math.min(MAX_FEED_CANDIDATES, Math.max(60, offset + limit * 4));
   const recent = await queryRecent(db, candidateLimit, 0);
   await attachCandidateTags(db, recent);
   const context = await loadRecommendationContext(db, null, headers);
