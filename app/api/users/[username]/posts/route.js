@@ -1,6 +1,7 @@
 export const runtime = "edge";
 
 import { NextResponse } from "next/server";
+import { escapeLikePattern } from "../../../../../lib/searchQuery";
 
 /**
  * GET /api/users/[username]/posts
@@ -105,8 +106,8 @@ export async function GET(request, { params }) {
 
         // Text search
         if (query) {
-            baseWhere += " AND (b.title LIKE ? OR b.subtitle LIKE ?)";
-            const like = `%${query}%`;
+            baseWhere += " AND (b.title LIKE ? ESCAPE '\\' OR b.subtitle LIKE ? ESCAPE '\\')";
+            const like = `%${escapeLikePattern(query)}%`;
             binds.push(like, like);
         }
 

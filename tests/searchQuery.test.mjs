@@ -8,7 +8,7 @@
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { parseSearchQuery, buildBlogSearch, isEmptyQuery, SORTS } from '../lib/searchQuery.js';
+import { parseSearchQuery, buildBlogSearch, isEmptyQuery, SORTS, escapeLikePattern } from '../lib/searchQuery.js';
 
 // ── parsing ─────────────────────────────────────────────────────────────────
 test('parses bare free text', () => {
@@ -189,4 +189,12 @@ test('placeholder count matches bind count', () => {
   const q = 'tag:ai -tag:spam author:bob -author:eve org:gdgoc rookie "open source" created:2025-10-01 is:unlisted';
   const { where, binds } = buildBlogSearch(parseSearchQuery(q));
   assert.equal((where.match(/\?/g) || []).length, binds.length, 'a mismatch here is a runtime SQL error');
+});
+
+test('escapeLikePattern neutralises percent, underscore and backslash', () => {
+  assert.equal(escapeLikePattern('100%'), '100\\%');
+  assert.equal(escapeLikePattern('a_b'), 'a\\_b');
+  assert.equal(escapeLikePattern('a\\b'), 'a\\\\b');
+  assert.equal(escapeLikePattern('%_%'), '\\%\\_\\%');
+  assert.equal(escapeLikePattern('Rookie'), 'rookie');
 });
