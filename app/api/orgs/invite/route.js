@@ -145,6 +145,20 @@ export async function GET(request) {
     const { getDB } = await import('../../../../lib/cloudflare');
     const db = getDB();
 
+    // Invite ids are bearer credentials. Only people who can already manage
+    // membership may enumerate them for an org.
+    const org = await db.prepare('SELECT owner_id FROM orgs WHERE id = ?').bind(orgId).first();
+    if (!org) return NextResponse.json({ error: 'Org not found' }, { status: 404 });
+
+    const membership = await db.prepare('SELECT role FROM org_members WHERE org_id = ? AND user_id = ?')
+      .bind(orgId, session.userId).first();
+    const canManageInvites = org.owner_id === session.userId
+      || membership?.role === 'admin'
+      || membership?.role === 'maintain';
+    if (!canManageInvites) {
+      return NextResponse.json({ error: 'Not authorized' }, { status: 403 });
+    }
+
     const invites = await db.prepare(`
       SELECT i.*, u.username as created_by_name
       FROM org_invites i
