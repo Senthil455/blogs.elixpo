@@ -287,6 +287,33 @@ export async function GET(request) {
             }
         }
 
+        // A user and an org can end up sharing one name: sign-up keeps the
+        // Accounts username even when an org already holds the namespace. The
+        // namespace row points at the org, which would 404 every personal post
+        // of the user. When the org has nothing at this slug, serve the user's.
+        if (ownerType === "org" && slug && !collection) {
+            const shadowed = await db
+                .prepare("SELECT id FROM users WHERE LOWER(username) = ?")
+                .bind(name)
+                .first();
+            if (shadowed) {
+                const orgHit = await db
+                    .prepare(`
+          SELECT 1 FROM blogs WHERE LOWER(slug) = ? AND published_as = ?
+            AND status IN ('published', 'unlisted') AND secret = 0
+          UNION ALL
+          SELECT 1 FROM collections WHERE org_id = ? AND LOWER(slug) = ?
+          LIMIT 1
+        `)
+                    .bind(slug, `org:${ownerId}`, ownerId, slug)
+                    .first();
+                if (!orgHit) {
+                    ownerType = "user";
+                    ownerId = shadowed.id;
+                }
+            }
+        }
+
         // Resolve profile
         if (ownerType === "user") {
             const user = await db
@@ -489,6 +516,20 @@ export async function GET(request) {
                     { error: "Org not found" },
                     { status: 404 },
                 );
+
+            // The org profile (no slug or collection) is members-only when the
+            // org is private. Direct links to published posts and collections
+            // remain readable; only the profile and its listings are gated.
+            if (!slug && !collection) {
+                const session = await getSession().catch(() => null);
+                const { canViewOrg } = await import("../../../lib/orgAccess");
+                if (!(await canViewOrg(db, org, session?.userId))) {
+                    return NextResponse.json(
+                        { error: "Org not found" },
+                        { status: 404 },
+                    );
+                }
+            }
 
             // Custom links from the dedicated table (name + url), newest schema wins
             // over the legacy JSON `links` column when present.
