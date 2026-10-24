@@ -26,6 +26,12 @@ export async function POST(request) {
       return NextResponse.json({ error: 'Not authorized' }, { status: 403 });
     }
 
+    // A maintainer can invite writers, but cannot hand out the admin role they
+    // do not hold themselves.
+    if (role === 'admin' && !isOwner && myRole?.role !== 'admin') {
+      return NextResponse.json({ error: 'Only an owner or admin can create an admin invite' }, { status: 403 });
+    }
+
     const inviteId = crypto.randomUUID().replace(/-/g, '').slice(0, 16);
     const now = Math.floor(Date.now() / 1000);
     const expiresAt = expiresInHours ? now + (expiresInHours * 3600) : null;
