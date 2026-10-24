@@ -30,6 +30,7 @@ export async function GET(request) {
       JOIN blogs b ON b.id = bk.blog_id
       JOIN users u ON u.id = b.author_id
       WHERE bk.user_id = ?
+        AND b.status IN ('published', 'unlisted') AND b.deleted_at IS NULL
     `;
     const binds = [session.userId];
 
@@ -63,6 +64,13 @@ export async function POST(request) {
   try {
     const { getDB } = await import('../../../../lib/cloudflare');
     const db = getDB();
+
+    const blog = await db.prepare('SELECT 1 AS found FROM blogs WHERE id = ?').bind(blogId).first();
+    if (!blog) return NextResponse.json({ error: 'Blog not found' }, { status: 404 });
+    if (collectionId) {
+      const collection = await db.prepare('SELECT 1 AS found FROM bookmark_collections WHERE id = ? AND user_id = ?').bind(collectionId, session.userId).first();
+      if (!collection) return NextResponse.json({ error: 'Collection not found' }, { status: 404 });
+    }
 
     await db.prepare(`
       INSERT INTO bookmarks (user_id, blog_id, collection_id, created_at)
